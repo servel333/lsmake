@@ -7,6 +7,7 @@ import (
 	"os"
 	"regexp"
 	"sort"
+	"strings"
 )
 
 func main() {
@@ -56,6 +57,19 @@ func listTargets(filename string) ([]string, error) {
 				if !seen[target] {
 					targets = append(targets, target)
 					seen[target] = true
+				}
+			}
+		} else if strings.HasPrefix(line, "include") {
+			includeFile := strings.TrimSpace(strings.TrimPrefix(line, "include"))
+			includeFile = strings.Trim(includeFile, "\"'")
+			includedTargets, err := listTargets(includeFile)
+			if err != nil {
+				return nil, fmt.Errorf("error processing included file %s: %s", includeFile, err)
+			}
+			for _, includedTarget := range includedTargets {
+				if !seen[includedTarget] {
+					targets = append(targets, includedTarget)
+					seen[includedTarget] = true
 				}
 			}
 		}
