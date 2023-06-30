@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"regexp"
+	"sort"
 )
 
 func main() {
@@ -41,22 +42,30 @@ func listTargets(filename string) ([]string, error) {
 	scanner := bufio.NewScanner(file)
 	targets := make([]string, 0)
 
-	// targetPattern := `^([^<>:;,?"*|/]+):`
 	targetPattern := `(^[^()<>~:;,!?"'*|/]+):`
 	r := regexp.MustCompile(targetPattern)
+
+	seen := make(map[string]bool)
 
 	for scanner.Scan() {
 		line := scanner.Text()
 		matches := r.FindStringSubmatch(line)
 		if len(matches) > 1 {
 			target := matches[1]
-			targets = append(targets, target)
+			if target[0] != '.' {
+				if !seen[target] {
+					targets = append(targets, target)
+					seen[target] = true
+				}
+			}
 		}
 	}
 
 	if err := scanner.Err(); err != nil {
 		return nil, err
 	}
+
+	sort.Strings(targets)
 
 	return targets, nil
 }
