@@ -2,6 +2,7 @@ package main
 
 import (
 	"bufio"
+	"errors"
 	"flag"
 	"fmt"
 	"os"
@@ -27,7 +28,7 @@ func main() {
 
 	targets, err := listTargets(makefiles)
 	if err != nil {
-		fmt.Printf("Error reading Makefiles: %s\n", err)
+		fmt.Fprintf(os.Stderr, "Error reading Makefiles: %v\n", err)
 		os.Exit(1)
 	}
 
@@ -43,25 +44,25 @@ func main() {
 
 func listTargets(makefiles []string) (map[string][]string, error) {
 	targets := make(map[string][]string)
+	var errs []error
 
-	noMakefileExists := true
 	for _, makefile := range makefiles {
 		if !fileExists(makefile) {
-			fmt.Printf("Makefile %s does not exist.\n", makefile)
+			errs = append(errs, fmt.Errorf("Makefile %s does not exist", makefile))
 			continue
 		}
-		noMakefileExists = false
 
 		makefileTargets, err := parseMakefile(makefile)
 		if err != nil {
-			return nil, fmt.Errorf("error reading Makefile %s: %s", makefile, err)
+			errs = append(errs, fmt.Errorf("error reading Makefile %s: %w", makefile, err))
+			continue
 		}
 
 		targets[makefile] = makefileTargets
 	}
 
-	if noMakefileExists {
-		return nil, fmt.Errorf("none of the provided Makefiles exist")
+	if len(errs) > 0 {
+		return targets, fmt.Errorf("%v", errs)
 	}
 
 	return targets, nil
@@ -91,7 +92,7 @@ func parseMakefile(makefile string) ([]string, error) {
 			includeFile = resolveIncludedFilePath(makefile, includeFile)
 			includedTargets, err := parseMakefile(includeFile)
 			if err != nil {
-				return nil, fmt.Errorf("error processing included file %s: %s", includeFile, err)
+				return targets, fmt.Errorf("error processing included file %s: %w", includeFile, err)
 			}
 			addUniqueTargets(&targets, seen, includedTargets)
 		}
@@ -106,6 +107,7 @@ func parseMakefile(makefile string) ([]string, error) {
 	return targets, nil
 }
 
+// extractTarget matches and returns the target from a line. Returns error if no target is found.
 func extractTarget(line string, r *regexp.Regexp) (string, error) {
 	matches := r.FindStringSubmatch(line)
 	if len(matches) > 1 {
@@ -114,6 +116,8 @@ func extractTarget(line string, r *regexp.Regexp) (string, error) {
 	return "", fmt.Errorf("no target found in line: %s", line)
 }
 
+// extractIncludeFile checks if a line starts with "include" (case insensitive),
+// trims the prefix, removes any surrounding quotes and returns the included file.
 func extractIncludeFile(line string) string {
 	includePrefix := "include"
 	lineLower := strings.ToLower(line)
@@ -129,6 +133,7 @@ func resolveIncludedFilePath(baseFile, includeFile string) string {
 	baseDir := filepath.Dir(baseFile)
 	includedPath, err := filepath.Abs(filepath.Join(baseDir, includeFile))
 	if err != nil {
+		fmt.Fprintf(os.Stderr, "Error resolving path: %v\n", err)
 		return filepath.Join(baseDir, includeFile)
 	}
 	return includedPath
@@ -149,7 +154,7 @@ func addUniqueTarget(targets *[]string, seen map[string]bool, target string) {
 
 func fileExists(filename string) bool {
 	_, err := os.Stat(filename)
-	return err == nil
+	return err == nil || errors.Is(err, os.ErrExist)
 }
 
 func displayUsage() {
